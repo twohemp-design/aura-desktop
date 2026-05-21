@@ -39,6 +39,8 @@ const DEFAULT_AURA_URL = "https://aurahub.ru";
 const AURA_DESKTOP_URL = process.env.AURA_DESKTOP_URL || DEFAULT_AURA_URL;
 const APP_USER_MODEL_ID = "ru.aurahub.desktop";
 const DEEP_LINK_PROTOCOL = "aura";
+const MAX_MAIN_FRAME_LOAD_RETRIES = 2;
+const MAIN_FRAME_LOAD_RETRY_DELAY_MS = 2500;
 
 let mainWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
@@ -46,6 +48,8 @@ let tray: Tray | null = null;
 let isQuitting = false;
 let pendingDeepLink: string | null = null;
 let openMainWindowHidden = false;
+let mainFrameLoadRetries = 0;
+let rendererOnline: boolean | null = null;
 
 const getAssetPath = (...segments: string[]) => {
   if (app.isPackaged) {
@@ -160,6 +164,78 @@ const createMainWindow = async () => {
 
     event.preventDefault();
     void shell.openExternal(url);
+  });
+
+  mainWindow.webContents.on("did-finish-load", () => {
+    mainFrameLoadRetries = 0;
+    mainWindow?.webContents.send("aura:app:renderer-ready");
+    log("info", "[window] Aura URL loaded");
+  });
+
+  mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
+    const failedUrl = validatedUrl || AURA_DESKTOP_URL;
+
+    log("warn", "[window] failed to load frame", {
+      errorCode,
+      errorDescription,
+      isMainFrame,
+      validatedUrl: failedUrl,
+    });
+
+    if (errorCode === -3) {
+      return;
+    }
+
+    if (!isMainFrame || isQuitting || !isAllowedAppUrl(failedUrl)) {
+      return;
+    }
+
+    if (mainFrameLoadRetries >= MAX_MAIN_FRAME_LOAD_RETRIES) {
+      mainWindow?.webContents.send("aura:app:load-failed", {
+        errorCode,
+        errorDescription,
+        url: failedUrl,
+      });
+      return;
+    }
+
+    mainFrameLoadRetries += 1;
+    setTimeout(() => {
+      if (!mainWindow || mainWindow.isDestroyed() || isQuitting) {
+        return;
+      }
+
+      log("info", "[window] retrying Aura URL load", { attempt: mainFrameLoadRetries });
+      void mainWindow.loadURL(AURA_DESKTOP_URL);
+    }, MAIN_FRAME_LOAD_RETRY_DELAY_MS);
+  });
+
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    log("error", "[window] renderer process gone", details);
+
+    if (isQuitting) {
+      return;
+    }
+
+    setTimeout(() => {
+      if (!mainWindow || mainWindow.isDestroyed() || isQuitting) {
+        return;
+      }
+
+      mainFrameLoadRetries = 0;
+      mainWindow.webContents.send("aura:app:renderer-recovering", details);
+      mainWindow.webContents.reload();
+    }, 1000);
+  });
+
+  mainWindow.on("unresponsive", () => {
+    log("warn", "[window] renderer unresponsive");
+    mainWindow?.webContents.send("aura:app:unresponsive");
+  });
+
+  mainWindow.on("responsive", () => {
+    log("info", "[window] renderer responsive");
+    mainWindow?.webContents.send("aura:app:responsive");
   });
 
   try {
@@ -310,6 +386,18 @@ const registerIpc = () => {
     quitAndInstall();
   });
   ipcMain.handle("aura:system:get-platform", () => process.platform);
+  ipcMain.handle("aura:system:get-status", () => ({
+    platform: process.platform,
+    online: rendererOnline,
+  }));
+  ipcMain.on("aura:system:network-status", (_event, payload: unknown) => {
+    const record = typeof payload === "object" && payload ? payload as Record<string, unknown> : {};
+    rendererOnline = record.online === true;
+    log("info", "[network] renderer network status", {
+      online: rendererOnline,
+      source: typeof record.source === "string" ? record.source : "renderer",
+    });
+  });
   ipcMain.handle("aura:window:is-maximized", (event) => (
     BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false
   ));
@@ -410,6 +498,7 @@ if (!gotSingleInstanceLock) {
   app.whenReady().then(async () => {
     configureSecurityPolicy(AURA_DESKTOP_URL);
     registerIpc();
+    registerPowerMonitor();
     createTray();
     splashWindow = openMainWindowHidden ? null : createSplashWindow(getAssetPath("aura-icon.png"));
     const updateResult = await runStartupUpdateFlow((stage) => setSplashStage(splashWindow, stage));
@@ -430,23 +519,27 @@ app.on("open-url", (event, url) => {
   void handleDeepLink(url);
 });
 
-powerMonitor.on("suspend", () => {
-  log("info", "[power] system suspend");
-});
+const registerPowerMonitor = () => {
+  powerMonitor.on("suspend", () => {
+    log("info", "[power] system suspend");
+    mainWindow?.webContents.send("aura:system:suspend");
+  });
 
-powerMonitor.on("resume", () => {
-  log("info", "[power] system resume");
-  mainWindow?.webContents.send("aura:system:resume");
-});
+  powerMonitor.on("resume", () => {
+    log("info", "[power] system resume");
+    mainWindow?.webContents.send("aura:system:resume");
+  });
 
-powerMonitor.on("lock-screen", () => {
-  log("info", "[power] screen locked");
-});
+  powerMonitor.on("lock-screen", () => {
+    log("info", "[power] screen locked");
+    mainWindow?.webContents.send("aura:system:lock");
+  });
 
-powerMonitor.on("unlock-screen", () => {
-  log("info", "[power] screen unlocked");
-  mainWindow?.webContents.send("aura:system:unlock");
-});
+  powerMonitor.on("unlock-screen", () => {
+    log("info", "[power] screen unlocked");
+    mainWindow?.webContents.send("aura:system:unlock");
+  });
+};
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {

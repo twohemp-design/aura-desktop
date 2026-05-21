@@ -1,7 +1,7 @@
 {
   "name": "@aura/desktop",
   "private": true,
-  "version": "0.1.1-alpha.7",
+  "version": "0.1.1-alpha.8",
   "description": "Aura Desktop client",
   "main": "dist/main/main.js",
   "author": "Aura",

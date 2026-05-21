@@ -1,17 +1,25 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type { IpcRendererEvent } from "electron";
 import type { AuraDesktopApi } from "@aura/desktop-bridge";
 
 const TITLEBAR_HEIGHT = 32;
 const PRODUCT_CHANNEL = "Альфа";
 
-const subscribeToMainEvent = (channel: string, callback: () => void) => {
-  const listener = () => callback();
+const subscribeToMainEvent = <Payload>(channel: string, callback: (payload: Payload) => void) => {
+  const listener = (_event: IpcRendererEvent, payload: Payload) => callback(payload);
 
   ipcRenderer.on(channel, listener);
 
   return () => {
     ipcRenderer.off(channel, listener);
   };
+};
+
+const reportNetworkStatus = (source: "initial" | "online" | "offline") => {
+  ipcRenderer.send("aura:system:network-status", {
+    online: navigator.onLine,
+    source,
+  });
 };
 
 const auraDesktop: AuraDesktopApi = {
@@ -38,8 +46,27 @@ const auraDesktop: AuraDesktopApi = {
   },
   system: {
     getPlatform: () => ipcRenderer.invoke("aura:system:get-platform") as Promise<NodeJS.Platform>,
-    onResume: (callback) => subscribeToMainEvent("aura:system:resume", callback),
-    onUnlock: (callback) => subscribeToMainEvent("aura:system:unlock", callback),
+    getStatus: () => ipcRenderer.invoke("aura:system:get-status") as ReturnType<AuraDesktopApi["system"]["getStatus"]>,
+    onSuspend: (callback) => subscribeToMainEvent<void>("aura:system:suspend", callback),
+    onResume: (callback) => subscribeToMainEvent<void>("aura:system:resume", callback),
+    onLock: (callback) => subscribeToMainEvent<void>("aura:system:lock", callback),
+    onUnlock: (callback) => subscribeToMainEvent<void>("aura:system:unlock", callback),
+    onNetworkChange: (callback) => {
+      const listener = () => callback(navigator.onLine);
+
+      window.addEventListener("online", listener);
+      window.addEventListener("offline", listener);
+
+      return () => {
+        window.removeEventListener("online", listener);
+        window.removeEventListener("offline", listener);
+      };
+    },
+    onRendererReady: (callback) => subscribeToMainEvent<void>("aura:app:renderer-ready", callback),
+    onRendererRecovering: (callback) => subscribeToMainEvent<void>("aura:app:renderer-recovering", callback),
+    onRendererUnresponsive: (callback) => subscribeToMainEvent<void>("aura:app:unresponsive", callback),
+    onRendererResponsive: (callback) => subscribeToMainEvent<void>("aura:app:responsive", callback),
+    onLoadFailed: (callback) => subscribeToMainEvent("aura:app:load-failed", callback),
   },
   window: {
     isMaximized: () => ipcRenderer.invoke("aura:window:is-maximized") as Promise<boolean>,
@@ -60,6 +87,15 @@ const auraDesktop: AuraDesktopApi = {
 };
 
 contextBridge.exposeInMainWorld("auraDesktop", auraDesktop);
+
+window.addEventListener("online", () => reportNetworkStatus("online"));
+window.addEventListener("offline", () => reportNetworkStatus("offline"));
+
+if (document.readyState === "loading") {
+  window.addEventListener("DOMContentLoaded", () => reportNetworkStatus("initial"), { once: true });
+} else {
+  reportNetworkStatus("initial");
+}
 
 const injectDesktopTitlebar = () => {
   if (document.getElementById("aura-desktop-titlebar")) {

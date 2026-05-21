@@ -24,6 +24,17 @@ export type AuraNotificationPayload = {
   silent?: boolean;
 };
 
+export type AuraSystemStatus = {
+  platform: NodeJS.Platform;
+  online: boolean | null;
+};
+
+export type AuraLoadFailure = {
+  errorCode: number;
+  errorDescription: string;
+  url: string;
+};
+
 export type AuraDesktopApi = {
   app: {
     getVersion: () => Promise<string>;
@@ -44,8 +55,17 @@ export type AuraDesktopApi = {
   };
   system: {
     getPlatform: () => Promise<NodeJS.Platform>;
+    getStatus: () => Promise<AuraSystemStatus>;
+    onSuspend: (callback: () => void) => () => void;
     onResume: (callback: () => void) => () => void;
+    onLock: (callback: () => void) => () => void;
     onUnlock: (callback: () => void) => () => void;
+    onNetworkChange: (callback: (online: boolean) => void) => () => void;
+    onRendererReady: (callback: () => void) => () => void;
+    onRendererRecovering: (callback: () => void) => () => void;
+    onRendererUnresponsive: (callback: () => void) => () => void;
+    onRendererResponsive: (callback: () => void) => () => void;
+    onLoadFailed: (callback: (failure: AuraLoadFailure) => void) => () => void;
   };
   updates: {
     getStatus: () => Promise<AuraUpdateStatus>;
