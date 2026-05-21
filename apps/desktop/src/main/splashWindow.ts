@@ -1,5 +1,4 @@
 import { BrowserWindow } from "electron";
-import path from "node:path";
 
 export type SplashStage = "checking" | "downloading" | "installing" | "starting";
 
@@ -53,14 +52,30 @@ const getSplashHtml = (initialMessage: string) => `
 
       .stars {
         position: absolute;
+        inset: -100% 0 0;
+        height: 200%;
+        overflow: hidden;
+        opacity: 0.24;
+      }
+
+      .stars::before,
+      .stars::after {
+        content: "";
+        position: absolute;
         inset: 0;
         background-image:
           radial-gradient(circle, rgba(255,255,255,0.7) 0 1px, transparent 1.5px),
           radial-gradient(circle, rgba(124,163,255,0.55) 0 1px, transparent 1.5px);
         background-size: 54px 54px, 82px 82px;
         background-position: 0 0, 24px 16px;
-        opacity: 0.22;
-        animation: drift 8s linear infinite;
+        animation: rain 8s linear infinite;
+      }
+
+      .stars::after {
+        opacity: 0.55;
+        background-size: 72px 72px, 116px 116px;
+        background-position: 34px 22px, 12px 48px;
+        animation-duration: 13s;
       }
 
       .content {
@@ -126,9 +141,9 @@ const getSplashHtml = (initialMessage: string) => `
         50% { transform: translateY(-2px) scale(1.035); opacity: 1; }
       }
 
-      @keyframes drift {
-        from { transform: translateY(0); }
-        to { transform: translateY(54px); }
+      @keyframes rain {
+        from { transform: translateY(-50%); }
+        to { transform: translateY(0); }
       }
     </style>
   </head>
