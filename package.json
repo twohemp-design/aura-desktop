@@ -1,0 +1,26 @@
+{
+  "name": "aura-desktop-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Aura Desktop workspace",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm --workspace @aura/desktop run dev",
+    "build": "npm --workspace @aura/desktop run build",
+    "dist": "npm --workspace @aura/desktop run dist",
+    "dist:release": "npm --workspace @aura/desktop run dist:release",
+    "typecheck": "npm --workspace @aura/desktop run typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "electron": "^42.2.0",
+    "electron-builder": "^26.8.1",
+    "esbuild": "^0.28.0",
+    "png-to-ico": "^3.0.1",
+    "rcedit": "^5.0.2",
+    "typescript": "^5.8.3"
+  }
+}

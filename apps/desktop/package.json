@@ -1,0 +1,24 @@
+{
+  "name": "@aura/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Aura Desktop client",
+  "main": "dist/main/main.js",
+  "author": "Aura",
+  "type": "commonjs",
+  "dependencies": {
+    "@aura/desktop-bridge": "file:../../packages/desktop-bridge",
+    "electron-updater": "^6.8.3"
+  },
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "typecheck": "tsc --noEmit",
+    "build:main": "esbuild src/main/main.ts --bundle --platform=node --target=node20 --external:electron --outfile=dist/main/main.js",
+    "build:preload": "esbuild src/preload/preload.ts --bundle --platform=node --target=node20 --external:electron --outfile=dist/preload/preload.js",
+    "build": "npm run clean && npm run typecheck && npm run build:main && npm run build:preload",
+    "dev": "npm run build && electron .",
+    "pack": "npm run build && electron-builder --config electron-builder.config.cjs --dir",
+    "dist": "npm run build && electron-builder --config electron-builder.config.cjs",
+    "dist:release": "node scripts/require-release-signing.cjs && npm run build && electron-builder --config electron-builder.config.cjs --publish always"
+  }
+}

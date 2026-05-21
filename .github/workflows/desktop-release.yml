@@ -1,0 +1,61 @@
+name: Desktop Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Build Windows installer
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish signed release
+        if: ${{ secrets.CSC_LINK != '' && secrets.CSC_KEY_PASSWORD != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          AURA_RELEASE_SIGNING: "true"
+          AURA_UPDATE_PROVIDER: "github"
+          AURA_GITHUB_OWNER: ${{ github.repository_owner }}
+          AURA_GITHUB_REPO: ${{ github.event.repository.name }}
+        run: npm run dist:release
+
+      - name: Build unsigned internal artifact
+        if: ${{ secrets.CSC_LINK == '' || secrets.CSC_KEY_PASSWORD == '' }}
+        env:
+          AURA_UPDATE_PROVIDER: "github"
+          AURA_GITHUB_OWNER: ${{ github.repository_owner }}
+          AURA_GITHUB_REPO: ${{ github.event.repository.name }}
+        run: npm run dist
+
+      - name: Upload unsigned artifact
+        if: ${{ secrets.CSC_LINK == '' || secrets.CSC_KEY_PASSWORD == '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: aura-desktop-windows-unsigned
+          path: |
+            apps/desktop/release/Aura-Setup-*.exe
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest.yml

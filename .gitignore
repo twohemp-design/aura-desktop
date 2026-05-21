@@ -1,0 +1,10 @@
+node_modules/
+.npm-cache/
+dist/
+out/
+release/
+*.log
+.env
+.env.local
+.DS_Store
+Thumbs.db
