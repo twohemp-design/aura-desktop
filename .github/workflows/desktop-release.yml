@@ -13,6 +13,9 @@ jobs:
   windows:
     name: Build Windows installer
     runs-on: windows-latest
+    env:
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
 
     steps:
       - name: Checkout
@@ -31,11 +34,9 @@ jobs:
         run: npm run build
 
       - name: Publish signed release
-        if: ${{ secrets.CSC_LINK != '' && secrets.CSC_KEY_PASSWORD != '' }}
+        if: ${{ env.CSC_LINK != '' && env.CSC_KEY_PASSWORD != '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           AURA_RELEASE_SIGNING: "true"
           AURA_UPDATE_PROVIDER: "github"
           AURA_GITHUB_OWNER: ${{ github.repository_owner }}
@@ -44,7 +45,7 @@ jobs:
         run: npm run dist:release
 
       - name: Build unsigned internal artifact
-        if: ${{ secrets.CSC_LINK == '' || secrets.CSC_KEY_PASSWORD == '' }}
+        if: ${{ env.CSC_LINK == '' || env.CSC_KEY_PASSWORD == '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AURA_UPDATE_PROVIDER: "github"
@@ -54,7 +55,7 @@ jobs:
         run: npm --workspace @aura/desktop run dist:dev-release
 
       - name: Upload unsigned artifact
-        if: ${{ secrets.CSC_LINK == '' || secrets.CSC_KEY_PASSWORD == '' }}
+        if: ${{ env.CSC_LINK == '' || env.CSC_KEY_PASSWORD == '' }}
         uses: actions/upload-artifact@v4
         with:
           name: aura-desktop-windows-unsigned
