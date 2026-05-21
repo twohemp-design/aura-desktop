@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { AuraDesktopApi } from "@aura/desktop-bridge";
 
 const TITLEBAR_HEIGHT = 32;
+const PRODUCT_CHANNEL = "Alpha";
 
 const auraDesktop: AuraDesktopApi = {
   app: {
@@ -66,6 +67,16 @@ const injectDesktopTitlebar = () => {
       margin: 0;
     }
 
+    body {
+      padding-top: var(--aura-desktop-titlebar-height);
+    }
+
+    #root {
+      height: calc(100vh - var(--aura-desktop-titlebar-height));
+      min-height: 0;
+      overflow: hidden;
+    }
+
     html::-webkit-scrollbar,
     body::-webkit-scrollbar {
       width: 0;
@@ -103,6 +114,7 @@ const injectDesktopTitlebar = () => {
       font-weight: 600;
       letter-spacing: 0;
       text-shadow: 0 1px 8px rgba(0, 0, 0, 0.35);
+      opacity: 0.92;
     }
 
     #aura-desktop-titlebar .aura-desktop-titlebar-mark {
@@ -165,7 +177,7 @@ const injectDesktopTitlebar = () => {
           <path d="M249.817 4.68584C252.283 -1.56196 261.126 -1.56194 263.592 4.68585L526.011 669.482C528.645 676.153 521.204 682.297 515.152 678.45L222.144 492.191C214.688 487.451 220.301 475.988 228.617 478.973L376.019 531.871C382.568 534.221 388.449 527.059 384.869 521.092L262.472 317.097C259.74 312.543 253.243 312.261 250.127 316.562L13.4569 643.166C8.34904 650.215 -2.62252 644.2 0.573641 636.103L249.817 4.68584Z" fill="currentColor"/>
         </svg>
       </span>
-      <span>Aura</span>
+      <span id="aura-desktop-version">${PRODUCT_CHANNEL}</span>
     </div>
     <div class="aura-desktop-titlebar-controls">
       <button type="button" data-window-action="minimize" aria-label="Minimize">
@@ -207,6 +219,14 @@ const injectDesktopTitlebar = () => {
 
   document.head.appendChild(style);
   document.body.prepend(titlebar);
+
+  void auraDesktop.app.getVersion().then((version) => {
+    const versionNode = document.getElementById("aura-desktop-version");
+
+    if (versionNode) {
+      versionNode.textContent = `${PRODUCT_CHANNEL} v${version}`;
+    }
+  });
 };
 
 if (document.readyState === "loading") {
