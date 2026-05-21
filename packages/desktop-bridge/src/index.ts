@@ -2,6 +2,11 @@ export type AuraDesktopSettings = {
   closeToTray: boolean;
   launchAtStartup: boolean;
   openAsHidden: boolean;
+  voiceHotkeys: {
+    deafenToggle: string;
+    muteToggle: string;
+    pushToTalk: string;
+  };
 };
 
 export type AuraDesktopPaths = {
@@ -35,6 +40,43 @@ export type AuraLoadFailure = {
   url: string;
 };
 
+export type AuraMediaPermission = "media" | "display-capture" | "notifications" | "speaker-selection";
+
+export type AuraPermissionStatus = "granted" | "denied" | "prompt" | "unknown";
+
+export type AuraMediaPermissionStatus = Record<AuraMediaPermission, AuraPermissionStatus>;
+
+export type AuraDisplaySourceKind = "screen" | "window";
+
+export type AuraDisplaySource = {
+  id: string;
+  name: string;
+  displayId: string;
+  kind: AuraDisplaySourceKind;
+  thumbnailDataUrl: string;
+  appIconDataUrl: string | null;
+};
+
+export type AuraDisplaySourceOptions = {
+  types?: AuraDisplaySourceKind[];
+  thumbnailWidth?: number;
+  thumbnailHeight?: number;
+};
+
+export type AuraVoiceHotkeyAction = "mute-toggle" | "deafen-toggle" | "push-to-talk";
+
+export type AuraVoiceHotkeySettings = Partial<Record<AuraVoiceHotkeyAction, string>>;
+
+export type AuraVoiceHotkeyEvent = {
+  action: AuraVoiceHotkeyAction;
+  accelerator: string;
+};
+
+export type AuraVoiceHotkeyRegistration = {
+  registered: AuraVoiceHotkeySettings;
+  failed: AuraVoiceHotkeySettings;
+};
+
 export type AuraDesktopApi = {
   app: {
     getVersion: () => Promise<string>;
@@ -52,6 +94,16 @@ export type AuraDesktopApi = {
   notifications: {
     isSupported: () => Promise<boolean>;
     show: (payload: AuraNotificationPayload) => Promise<boolean>;
+  };
+  media: {
+    getPermissionStatus: () => Promise<AuraMediaPermissionStatus>;
+    getDisplaySources: (options?: AuraDisplaySourceOptions) => Promise<AuraDisplaySource[]>;
+  };
+  voice: {
+    getHotkeys: () => Promise<AuraVoiceHotkeySettings>;
+    setHotkeys: (hotkeys: AuraVoiceHotkeySettings) => Promise<AuraVoiceHotkeyRegistration>;
+    clearHotkeys: () => Promise<void>;
+    onHotkey: (callback: (event: AuraVoiceHotkeyEvent) => void) => () => void;
   };
   system: {
     getPlatform: () => Promise<NodeJS.Platform>;

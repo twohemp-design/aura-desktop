@@ -44,6 +44,24 @@ const auraDesktop: AuraDesktopApi = {
     isSupported: () => ipcRenderer.invoke("aura:notifications:is-supported") as Promise<boolean>,
     show: (payload) => ipcRenderer.invoke("aura:notifications:show", payload) as Promise<boolean>,
   },
+  media: {
+    getPermissionStatus: () => (
+      ipcRenderer.invoke("aura:media:get-permission-status") as ReturnType<AuraDesktopApi["media"]["getPermissionStatus"]>
+    ),
+    getDisplaySources: (options) => (
+      ipcRenderer.invoke("aura:media:get-display-sources", options) as ReturnType<AuraDesktopApi["media"]["getDisplaySources"]>
+    ),
+  },
+  voice: {
+    getHotkeys: () => ipcRenderer.invoke("aura:voice:get-hotkeys") as ReturnType<AuraDesktopApi["voice"]["getHotkeys"]>,
+    setHotkeys: (hotkeys) => (
+      ipcRenderer.invoke("aura:voice:set-hotkeys", hotkeys) as ReturnType<AuraDesktopApi["voice"]["setHotkeys"]>
+    ),
+    clearHotkeys: () => (
+      ipcRenderer.invoke("aura:voice:clear-hotkeys") as ReturnType<AuraDesktopApi["voice"]["clearHotkeys"]>
+    ),
+    onHotkey: (callback) => subscribeToMainEvent("aura:voice:hotkey", callback),
+  },
   system: {
     getPlatform: () => ipcRenderer.invoke("aura:system:get-platform") as Promise<NodeJS.Platform>,
     getStatus: () => ipcRenderer.invoke("aura:system:get-status") as ReturnType<AuraDesktopApi["system"]["getStatus"]>,

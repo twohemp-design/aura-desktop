@@ -6,6 +6,11 @@ export type AuraDesktopSettings = {
   closeToTray: boolean;
   launchAtStartup: boolean;
   openAsHidden: boolean;
+  voiceHotkeys: {
+    deafenToggle: string;
+    muteToggle: string;
+    pushToTalk: string;
+  };
 };
 
 const SETTINGS_FILE = "desktop-settings.json";
@@ -14,6 +19,11 @@ const DEFAULT_SETTINGS: AuraDesktopSettings = {
   closeToTray: true,
   launchAtStartup: false,
   openAsHidden: true,
+  voiceHotkeys: {
+    deafenToggle: "CommandOrControl+Shift+D",
+    muteToggle: "CommandOrControl+Shift+M",
+    pushToTalk: "CommandOrControl+Shift+Space",
+  },
 };
 
 const getSettingsPath = () => path.join(app.getPath("userData"), SETTINGS_FILE);
@@ -27,6 +37,22 @@ const ensureSettingsShape = (value: unknown): AuraDesktopSettings => {
       ? record.launchAtStartup
       : DEFAULT_SETTINGS.launchAtStartup,
     openAsHidden: typeof record.openAsHidden === "boolean" ? record.openAsHidden : DEFAULT_SETTINGS.openAsHidden,
+    voiceHotkeys: {
+      ...DEFAULT_SETTINGS.voiceHotkeys,
+      ...(typeof record.voiceHotkeys === "object" && record.voiceHotkeys
+        ? {
+            deafenToggle: typeof (record.voiceHotkeys as Record<string, unknown>).deafenToggle === "string"
+              ? (record.voiceHotkeys as Record<string, string>).deafenToggle
+              : DEFAULT_SETTINGS.voiceHotkeys.deafenToggle,
+            muteToggle: typeof (record.voiceHotkeys as Record<string, unknown>).muteToggle === "string"
+              ? (record.voiceHotkeys as Record<string, string>).muteToggle
+              : DEFAULT_SETTINGS.voiceHotkeys.muteToggle,
+            pushToTalk: typeof (record.voiceHotkeys as Record<string, unknown>).pushToTalk === "string"
+              ? (record.voiceHotkeys as Record<string, string>).pushToTalk
+              : DEFAULT_SETTINGS.voiceHotkeys.pushToTalk,
+          }
+        : {}),
+    },
   };
 };
 

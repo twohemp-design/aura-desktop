@@ -1,6 +1,8 @@
 import {
   app,
   BrowserWindow,
+  desktopCapturer,
+  globalShortcut,
   ipcMain,
   Menu,
   Notification,
@@ -41,6 +43,10 @@ const APP_USER_MODEL_ID = "ru.aurahub.desktop";
 const DEEP_LINK_PROTOCOL = "aura";
 const MAX_MAIN_FRAME_LOAD_RETRIES = 2;
 const MAIN_FRAME_LOAD_RETRY_DELAY_MS = 2500;
+const DEFAULT_DISPLAY_THUMBNAIL_SIZE = 360;
+const MAX_DISPLAY_THUMBNAIL_SIZE = 720;
+const MEDIA_PERMISSIONS = ["media", "display-capture", "notifications", "speaker-selection"] as const;
+const VOICE_HOTKEY_ACTIONS = ["mute-toggle", "deafen-toggle", "push-to-talk"] as const;
 
 let mainWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
@@ -50,6 +56,7 @@ let pendingDeepLink: string | null = null;
 let openMainWindowHidden = false;
 let mainFrameLoadRetries = 0;
 let rendererOnline: boolean | null = null;
+let registeredVoiceHotkeys = new Map<string, typeof VOICE_HOTKEY_ACTIONS[number]>();
 
 const getAssetPath = (...segments: string[]) => {
   if (app.isPackaged) {
@@ -340,6 +347,138 @@ const normalizeNotificationText = (value: unknown, fallback: string) => {
   return trimmed.slice(0, 240);
 };
 
+const clampThumbnailSize = (value: unknown) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_DISPLAY_THUMBNAIL_SIZE;
+  }
+
+  return Math.min(MAX_DISPLAY_THUMBNAIL_SIZE, Math.max(80, Math.round(value)));
+};
+
+const normalizeDisplaySourceTypes = (value: unknown) => {
+  if (!Array.isArray(value)) {
+    return ["screen", "window"] satisfies Array<"screen" | "window">;
+  }
+
+  const normalized = value.filter((type): type is "screen" | "window" => type === "screen" || type === "window");
+
+  return normalized.length > 0 ? normalized : ["screen", "window"] satisfies Array<"screen" | "window">;
+};
+
+const getMediaPermissionStatus = () => {
+  const baseStatus = Object.fromEntries(MEDIA_PERMISSIONS.map((permission) => [permission, "prompt"]));
+
+  return {
+    ...baseStatus,
+    notifications: Notification.isSupported() ? "prompt" : "denied",
+  };
+};
+
+const getDisplaySources = async (payload: unknown) => {
+  const record = typeof payload === "object" && payload ? payload as Record<string, unknown> : {};
+  const thumbnailSize = {
+    width: clampThumbnailSize(record.thumbnailWidth),
+    height: clampThumbnailSize(record.thumbnailHeight),
+  };
+  const types = normalizeDisplaySourceTypes(record.types);
+  const sources = await desktopCapturer.getSources({
+    types,
+    thumbnailSize,
+    fetchWindowIcons: true,
+  });
+
+  return sources.map((source) => ({
+    id: source.id,
+    name: source.name,
+    displayId: source.display_id,
+    kind: source.id.startsWith("screen:") ? "screen" : "window",
+    thumbnailDataUrl: source.thumbnail.toDataURL(),
+    appIconDataUrl: source.appIcon?.isEmpty() === false ? source.appIcon.toDataURL() : null,
+  }));
+};
+
+const normalizeVoiceHotkeySettings = (payload: unknown) => {
+  const record = typeof payload === "object" && payload ? payload as Record<string, unknown> : {};
+
+  return {
+    "deafen-toggle": typeof record["deafen-toggle"] === "string"
+      ? record["deafen-toggle"]
+      : typeof record.deafenToggle === "string"
+        ? record.deafenToggle
+        : undefined,
+    "mute-toggle": typeof record["mute-toggle"] === "string"
+      ? record["mute-toggle"]
+      : typeof record.muteToggle === "string"
+        ? record.muteToggle
+        : undefined,
+    "push-to-talk": typeof record["push-to-talk"] === "string"
+      ? record["push-to-talk"]
+      : typeof record.pushToTalk === "string"
+        ? record.pushToTalk
+        : undefined,
+  };
+};
+
+const readVoiceHotkeys = () => {
+  const { voiceHotkeys } = readSettings();
+
+  return {
+    "deafen-toggle": voiceHotkeys.deafenToggle,
+    "mute-toggle": voiceHotkeys.muteToggle,
+    "push-to-talk": voiceHotkeys.pushToTalk,
+  };
+};
+
+const unregisterVoiceHotkeys = () => {
+  for (const accelerator of registeredVoiceHotkeys.keys()) {
+    globalShortcut.unregister(accelerator);
+  }
+
+  registeredVoiceHotkeys = new Map();
+};
+
+const registerVoiceHotkeys = (hotkeys: ReturnType<typeof normalizeVoiceHotkeySettings>) => {
+  unregisterVoiceHotkeys();
+
+  const registered: Record<string, string> = {};
+  const failed: Record<string, string> = {};
+
+  for (const action of VOICE_HOTKEY_ACTIONS) {
+    const accelerator = hotkeys[action]?.trim();
+
+    if (!accelerator) {
+      continue;
+    }
+
+    const didRegister = globalShortcut.register(accelerator, () => {
+      log("info", "[voice] global hotkey pressed", { action, accelerator });
+      mainWindow?.webContents.send("aura:voice:hotkey", { action, accelerator });
+    });
+
+    if (didRegister) {
+      registered[action] = accelerator;
+      registeredVoiceHotkeys.set(accelerator, action);
+    } else {
+      failed[action] = accelerator;
+      log("warn", "[voice] failed to register global hotkey", { action, accelerator });
+    }
+  }
+
+  return { registered, failed };
+};
+
+const persistVoiceHotkeys = (hotkeys: ReturnType<typeof normalizeVoiceHotkeySettings>) => {
+  const current = readSettings().voiceHotkeys;
+
+  updateSettings({
+    voiceHotkeys: {
+      deafenToggle: hotkeys["deafen-toggle"] ?? current.deafenToggle,
+      muteToggle: hotkeys["mute-toggle"] ?? current.muteToggle,
+      pushToTalk: hotkeys["push-to-talk"] ?? current.pushToTalk,
+    },
+  });
+};
+
 const registerIpc = () => {
   ipcMain.handle("aura:app:get-version", () => app.getVersion());
   ipcMain.handle("aura:app:get-url", () => AURA_DESKTOP_URL);
@@ -351,10 +490,28 @@ const registerIpc = () => {
   ipcMain.handle("aura:app:get-settings", () => readSettings());
   ipcMain.handle("aura:app:update-settings", (_event, patch: unknown) => {
     const record = typeof patch === "object" && patch ? patch as Record<string, unknown> : {};
+    const currentVoiceHotkeys = readSettings().voiceHotkeys;
+    const voiceRecord = typeof record.voiceHotkeys === "object" && record.voiceHotkeys
+      ? record.voiceHotkeys as Record<string, unknown>
+      : null;
+    const voiceHotkeys = typeof record.voiceHotkeys === "object" && record.voiceHotkeys
+      ? {
+          deafenToggle: typeof voiceRecord?.deafenToggle === "string"
+            ? voiceRecord.deafenToggle
+            : currentVoiceHotkeys.deafenToggle,
+          muteToggle: typeof voiceRecord?.muteToggle === "string"
+            ? voiceRecord.muteToggle
+            : currentVoiceHotkeys.muteToggle,
+          pushToTalk: typeof voiceRecord?.pushToTalk === "string"
+            ? voiceRecord.pushToTalk
+            : currentVoiceHotkeys.pushToTalk,
+        }
+      : undefined;
     const nextSettings = updateSettings({
       closeToTray: typeof record.closeToTray === "boolean" ? record.closeToTray : undefined,
       launchAtStartup: typeof record.launchAtStartup === "boolean" ? record.launchAtStartup : undefined,
       openAsHidden: typeof record.openAsHidden === "boolean" ? record.openAsHidden : undefined,
+      voiceHotkeys,
     });
 
     app.setLoginItemSettings({
@@ -426,6 +583,25 @@ const registerIpc = () => {
     notification.show();
 
     return true;
+  });
+  ipcMain.handle("aura:media:get-permission-status", () => getMediaPermissionStatus());
+  ipcMain.handle("aura:media:get-display-sources", (_event, payload: unknown) => getDisplaySources(payload));
+  ipcMain.handle("aura:voice:get-hotkeys", () => readVoiceHotkeys());
+  ipcMain.handle("aura:voice:set-hotkeys", (_event, payload: unknown) => {
+    const hotkeys = normalizeVoiceHotkeySettings(payload);
+
+    persistVoiceHotkeys(hotkeys);
+    return registerVoiceHotkeys(readVoiceHotkeys());
+  });
+  ipcMain.handle("aura:voice:clear-hotkeys", () => {
+    unregisterVoiceHotkeys();
+    updateSettings({
+      voiceHotkeys: {
+        deafenToggle: "",
+        muteToggle: "",
+        pushToTalk: "",
+      },
+    });
   });
 
   ipcMain.on("aura:window:minimize", (event) => {
@@ -499,6 +675,7 @@ if (!gotSingleInstanceLock) {
     configureSecurityPolicy(AURA_DESKTOP_URL);
     registerIpc();
     registerPowerMonitor();
+    registerVoiceHotkeys(readVoiceHotkeys());
     createTray();
     splashWindow = openMainWindowHidden ? null : createSplashWindow(getAssetPath("aura-icon.png"));
     const updateResult = await runStartupUpdateFlow((stage) => setSplashStage(splashWindow, stage));
@@ -551,6 +728,7 @@ app.on("activate", () => {
 
 app.on("before-quit", () => {
   isQuitting = true;
+  unregisterVoiceHotkeys();
   log("info", "[shutdown] Aura Desktop quitting");
 });
 
