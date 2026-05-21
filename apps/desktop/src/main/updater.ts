@@ -32,6 +32,7 @@ export const configureUpdater = (getWindow: () => BrowserWindow | null) => {
   }
 
   configured = true;
+  autoUpdater.allowPrerelease = true;
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
 
