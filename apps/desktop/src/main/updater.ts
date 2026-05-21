@@ -127,7 +127,7 @@ export const runStartupUpdateFlow = async (onStage: (stage: "checking" | "downlo
 
     onStage("installing");
     log("info", "[updates] installing downloaded update");
-    autoUpdater.quitAndInstall(false, true);
+    autoUpdater.quitAndInstall(true, true);
 
     return "installing" as const;
   } catch (error) {
@@ -167,5 +167,5 @@ export const downloadUpdate = async () => {
 };
 
 export const quitAndInstall = () => {
-  autoUpdater.quitAndInstall(false, true);
+  autoUpdater.quitAndInstall(true, true);
 };

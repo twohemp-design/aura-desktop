@@ -56,9 +56,8 @@ module.exports = {
     artifactName: "Aura-Setup-${version}.${ext}",
   },
   nsis: {
-    oneClick: false,
+    oneClick: true,
     perMachine: false,
-    allowToChangeInstallationDirectory: true,
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
   },
