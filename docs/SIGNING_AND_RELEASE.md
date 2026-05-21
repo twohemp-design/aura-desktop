@@ -25,6 +25,30 @@ apps/desktop/release/Aura-Setup-0.1.0.exe
 
 Local builds are not suitable for public distribution because they are unsigned.
 
+## Development GitHub Release
+
+During active development, unsigned builds can be published to GitHub Releases so installed dev builds can update without manual reinstalling.
+
+Use SemVer prerelease versions for frequent alpha builds:
+
+```text
+0.1.1-alpha.1
+0.1.1-alpha.2
+0.1.1-alpha.3
+```
+
+Do not use versions such as `0.1.01` for updater releases. Electron Builder and update tooling normalize SemVer numeric identifiers, so `0.1.01` becomes `0.1.1`.
+
+Command:
+
+```powershell
+npm --workspace @aura/desktop run dist:dev-release
+```
+
+GitHub Actions runs this path automatically when no signing certificate secrets are configured.
+
+This is only for development. Production releases should use signed builds.
+
 ## Production Release Build
 
 Command:

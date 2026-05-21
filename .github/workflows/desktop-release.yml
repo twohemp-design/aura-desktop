@@ -40,15 +40,18 @@ jobs:
           AURA_UPDATE_PROVIDER: "github"
           AURA_GITHUB_OWNER: ${{ github.repository_owner }}
           AURA_GITHUB_REPO: ${{ github.event.repository.name }}
+          AURA_GITHUB_RELEASE_TYPE: "prerelease"
         run: npm run dist:release
 
       - name: Build unsigned internal artifact
         if: ${{ secrets.CSC_LINK == '' || secrets.CSC_KEY_PASSWORD == '' }}
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AURA_UPDATE_PROVIDER: "github"
           AURA_GITHUB_OWNER: ${{ github.repository_owner }}
           AURA_GITHUB_REPO: ${{ github.event.repository.name }}
-        run: npm run dist
+          AURA_GITHUB_RELEASE_TYPE: "prerelease"
+        run: npm --workspace @aura/desktop run dist:dev-release
 
       - name: Upload unsigned artifact
         if: ${{ secrets.CSC_LINK == '' || secrets.CSC_KEY_PASSWORD == '' }}

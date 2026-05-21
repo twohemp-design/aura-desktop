@@ -3,6 +3,7 @@ const updateUrl = process.env.AURA_UPDATE_URL || "";
 const updateProvider = process.env.AURA_UPDATE_PROVIDER || (updateUrl ? "generic" : "github");
 const githubOwner = process.env.AURA_GITHUB_OWNER || "twohemp-design";
 const githubRepo = process.env.AURA_GITHUB_REPO || "aura-desktop";
+const githubReleaseType = process.env.AURA_GITHUB_RELEASE_TYPE || "prerelease";
 
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
@@ -31,7 +32,7 @@ module.exports = {
           provider: "github",
           owner: githubOwner,
           repo: githubRepo,
-          releaseType: "release",
+          releaseType: githubReleaseType,
         },
       ]
     : updateUrl

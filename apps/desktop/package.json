@@ -1,7 +1,7 @@
 {
   "name": "@aura/desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1-alpha.1",
   "description": "Aura Desktop client",
   "main": "dist/main/main.js",
   "author": "Aura",
@@ -19,6 +19,7 @@
     "dev": "npm run build && electron .",
     "pack": "npm run build && electron-builder --config electron-builder.config.cjs --dir",
     "dist": "npm run build && electron-builder --config electron-builder.config.cjs",
+    "dist:dev-release": "npm run build && electron-builder --config electron-builder.config.cjs --publish always",
     "dist:release": "node scripts/require-release-signing.cjs && npm run build && electron-builder --config electron-builder.config.cjs --publish always"
   }
 }
