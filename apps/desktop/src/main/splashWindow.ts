@@ -13,7 +13,7 @@ const escapeHtml = (value: string) => (
 
 const getSplashHtml = (initialMessage: string) => `
 <!doctype html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="utf-8">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:;">
@@ -156,18 +156,18 @@ const getSplashHtml = (initialMessage: string) => `
 
 const getMessage = (stage: SplashStage) => {
   if (stage === "checking") {
-    return "Checking for updates...";
+    return "Проверка обновлений...";
   }
 
   if (stage === "downloading") {
-    return "Downloading update...";
+    return "Загрузка обновления...";
   }
 
   if (stage === "installing") {
-    return "Installing update...";
+    return "Установка обновления...";
   }
 
-  return "Starting...";
+  return "Запуск...";
 };
 
 export const createSplashWindow = (iconPath: string) => {
