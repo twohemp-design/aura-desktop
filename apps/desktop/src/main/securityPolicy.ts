@@ -1,6 +1,8 @@
 import { session, shell, type PermissionRequest } from "electron";
 import { log } from "./logger";
 
+const SAFE_EXTERNAL_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
+
 const ALLOWED_PERMISSION_REQUESTS = new Set([
   "display-capture",
   "fullscreen",
@@ -23,6 +25,16 @@ const normalizeOrigin = (value: string) => {
     return new URL(value).origin;
   } catch {
     return null;
+  }
+};
+
+const isSafeExternalUrl = (value: string) => {
+  try {
+    const parsed = new URL(value);
+
+    return SAFE_EXTERNAL_PROTOCOLS.has(parsed.protocol);
+  } catch {
+    return false;
   }
 };
 
@@ -95,7 +107,11 @@ export const configureSecurityPolicy = (auraUrl: string) => {
     }
 
     log("warn", "[security] blocked main frame navigation", details.url);
-    void shell.openExternal(details.url);
+
+    if (isSafeExternalUrl(details.url)) {
+      void shell.openExternal(details.url);
+    }
+
     callback({ cancel: true });
   });
 };

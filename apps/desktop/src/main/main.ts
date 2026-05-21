@@ -10,6 +10,7 @@ import {
   shell,
   Tray,
 } from "electron";
+import type { IpcMainEvent, IpcMainInvokeEvent } from "electron";
 import path from "node:path";
 import {
   getLogFilePath,
@@ -52,6 +53,7 @@ const DEFAULT_DISPLAY_THUMBNAIL_SIZE = 360;
 const MAX_DISPLAY_THUMBNAIL_SIZE = 720;
 const MEDIA_PERMISSIONS = ["media", "display-capture", "notifications", "speaker-selection"] as const;
 const VOICE_HOTKEY_ACTIONS = ["mute-toggle", "deafen-toggle", "push-to-talk"] as const;
+const SAFE_EXTERNAL_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 
 let mainWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
@@ -80,6 +82,40 @@ const isAllowedAppUrl = (targetUrl: string) => {
   } catch {
     return false;
   }
+};
+
+const isSafeExternalUrl = (targetUrl: string) => {
+  try {
+    const parsed = new URL(targetUrl);
+
+    return SAFE_EXTERNAL_PROTOCOLS.has(parsed.protocol);
+  } catch {
+    return false;
+  }
+};
+
+const openSafeExternalUrl = (targetUrl: string) => {
+  if (!isSafeExternalUrl(targetUrl)) {
+    log("warn", "[security] blocked unsafe external URL", targetUrl);
+    return;
+  }
+
+  void shell.openExternal(targetUrl);
+};
+
+const isTrustedSender = (event: IpcMainInvokeEvent | IpcMainEvent) => {
+  const frameUrl = event.senderFrame?.url;
+
+  if (!frameUrl || isAllowedAppUrl(frameUrl)) {
+    return true;
+  }
+
+  log("warn", "[security] blocked IPC from untrusted sender", {
+    frameUrl,
+    processId: event.processId,
+  });
+
+  return false;
 };
 
 const buildAuraUrl = (pathname: string, search = "") => {
@@ -129,10 +165,15 @@ const createMainWindow = async () => {
     icon: getAssetPath("aura-icon.png"),
     show: false,
     webPreferences: {
+      allowRunningInsecureContent: false,
+      backgroundThrottling: false,
+      devTools: !app.isPackaged,
       preload: path.join(__dirname, "../preload/preload.js"),
       contextIsolation: true,
+      experimentalFeatures: false,
       nodeIntegration: false,
       sandbox: true,
+      webSecurity: true,
     },
   });
 
@@ -162,10 +203,11 @@ const createMainWindow = async () => {
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (isAllowedAppUrl(url)) {
-      return { action: "allow" };
+      void mainWindow?.loadURL(url);
+      return { action: "deny" };
     }
 
-    void shell.openExternal(url);
+    openSafeExternalUrl(url);
     return { action: "deny" };
   });
 
@@ -175,7 +217,16 @@ const createMainWindow = async () => {
     }
 
     event.preventDefault();
-    void shell.openExternal(url);
+    openSafeExternalUrl(url);
+  });
+
+  mainWindow.webContents.on("will-redirect", (event, url) => {
+    if (isAllowedAppUrl(url)) {
+      return;
+    }
+
+    event.preventDefault();
+    openSafeExternalUrl(url);
   });
 
   mainWindow.webContents.on("did-finish-load", () => {
@@ -538,7 +589,11 @@ const registerIpc = () => {
     userData: app.getPath("userData"),
   }));
   ipcMain.handle("aura:app:get-settings", () => readSettings());
-  ipcMain.handle("aura:app:update-settings", (_event, patch: unknown) => {
+  ipcMain.handle("aura:app:update-settings", (event, patch: unknown) => {
+    if (!isTrustedSender(event)) {
+      throw new Error("Untrusted IPC sender");
+    }
+
     const record = typeof patch === "object" && patch ? patch as Record<string, unknown> : {};
     const currentVoiceHotkeys = readSettings().voiceHotkeys;
     const voiceRecord = typeof record.voiceHotkeys === "object" && record.voiceHotkeys
@@ -573,7 +628,11 @@ const registerIpc = () => {
     return nextSettings;
   });
   ipcMain.handle("aura:app:is-login-item-enabled", () => app.getLoginItemSettings().openAtLogin);
-  ipcMain.handle("aura:app:set-login-item-enabled", (_event, enabled: unknown) => {
+  ipcMain.handle("aura:app:set-login-item-enabled", (event, enabled: unknown) => {
+    if (!isTrustedSender(event)) {
+      throw new Error("Untrusted IPC sender");
+    }
+
     const nextSettings = updateSettings({ launchAtStartup: enabled === true });
 
     app.setLoginItemSettings({
@@ -586,9 +645,25 @@ const registerIpc = () => {
   });
   ipcMain.handle("aura:diagnostics:get-log-file-path", () => getLogFilePath());
   ipcMain.handle("aura:diagnostics:read-recent-log", () => readRecentLog());
-  ipcMain.handle("aura:diagnostics:get-report", () => buildDiagnosticsReport(mainWindow, getDiagnosticsInput()));
-  ipcMain.handle("aura:diagnostics:write-report", () => writeDiagnosticsReport(mainWindow, getDiagnosticsInput()));
-  ipcMain.handle("aura:diagnostics:open-folder", async () => {
+  ipcMain.handle("aura:diagnostics:get-report", (event) => {
+    if (!isTrustedSender(event)) {
+      throw new Error("Untrusted IPC sender");
+    }
+
+    return buildDiagnosticsReport(mainWindow, getDiagnosticsInput());
+  });
+  ipcMain.handle("aura:diagnostics:write-report", (event) => {
+    if (!isTrustedSender(event)) {
+      throw new Error("Untrusted IPC sender");
+    }
+
+    return writeDiagnosticsReport(mainWindow, getDiagnosticsInput());
+  });
+  ipcMain.handle("aura:diagnostics:open-folder", async (event) => {
+    if (!isTrustedSender(event)) {
+      throw new Error("Untrusted IPC sender");
+    }
+
     const error = await shell.openPath(getDiagnosticsDirectory());
 
     return {
@@ -598,9 +673,25 @@ const registerIpc = () => {
     };
   });
   ipcMain.handle("aura:updates:get-status", () => getUpdateStatus());
-  ipcMain.handle("aura:updates:check", () => checkForUpdates());
-  ipcMain.handle("aura:updates:download", () => downloadUpdate());
-  ipcMain.on("aura:updates:quit-and-install", () => {
+  ipcMain.handle("aura:updates:check", (event) => {
+    if (!isTrustedSender(event)) {
+      throw new Error("Untrusted IPC sender");
+    }
+
+    return checkForUpdates();
+  });
+  ipcMain.handle("aura:updates:download", (event) => {
+    if (!isTrustedSender(event)) {
+      throw new Error("Untrusted IPC sender");
+    }
+
+    return downloadUpdate();
+  });
+  ipcMain.on("aura:updates:quit-and-install", (event) => {
+    if (!isTrustedSender(event)) {
+      return;
+    }
+
     quitAndInstall();
   });
   ipcMain.handle("aura:system:get-platform", () => process.platform);
@@ -608,7 +699,11 @@ const registerIpc = () => {
     platform: process.platform,
     online: rendererOnline,
   }));
-  ipcMain.on("aura:system:network-status", (_event, payload: unknown) => {
+  ipcMain.on("aura:system:network-status", (event, payload: unknown) => {
+    if (!isTrustedSender(event)) {
+      return;
+    }
+
     const record = typeof payload === "object" && payload ? payload as Record<string, unknown> : {};
     rendererOnline = record.online === true;
     log("info", "[network] renderer network status", {
@@ -620,7 +715,11 @@ const registerIpc = () => {
     BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false
   ));
   ipcMain.handle("aura:notifications:is-supported", () => Notification.isSupported());
-  ipcMain.handle("aura:notifications:show", (_event, payload: unknown) => {
+  ipcMain.handle("aura:notifications:show", (event, payload: unknown) => {
+    if (!isTrustedSender(event)) {
+      throw new Error("Untrusted IPC sender");
+    }
+
     if (!Notification.isSupported()) {
       return false;
     }
@@ -646,15 +745,29 @@ const registerIpc = () => {
     return true;
   });
   ipcMain.handle("aura:media:get-permission-status", () => getMediaPermissionStatus());
-  ipcMain.handle("aura:media:get-display-sources", (_event, payload: unknown) => getDisplaySources(payload));
+  ipcMain.handle("aura:media:get-display-sources", (event, payload: unknown) => {
+    if (!isTrustedSender(event)) {
+      throw new Error("Untrusted IPC sender");
+    }
+
+    return getDisplaySources(payload);
+  });
   ipcMain.handle("aura:voice:get-hotkeys", () => readVoiceHotkeys());
-  ipcMain.handle("aura:voice:set-hotkeys", (_event, payload: unknown) => {
+  ipcMain.handle("aura:voice:set-hotkeys", (event, payload: unknown) => {
+    if (!isTrustedSender(event)) {
+      throw new Error("Untrusted IPC sender");
+    }
+
     const hotkeys = normalizeVoiceHotkeySettings(payload);
 
     persistVoiceHotkeys(hotkeys);
     return registerVoiceHotkeys(readVoiceHotkeys());
   });
-  ipcMain.handle("aura:voice:clear-hotkeys", () => {
+  ipcMain.handle("aura:voice:clear-hotkeys", (event) => {
+    if (!isTrustedSender(event)) {
+      throw new Error("Untrusted IPC sender");
+    }
+
     unregisterVoiceHotkeys();
     updateSettings({
       voiceHotkeys: {
@@ -666,10 +779,18 @@ const registerIpc = () => {
   });
 
   ipcMain.on("aura:window:minimize", (event) => {
+    if (!isTrustedSender(event)) {
+      return;
+    }
+
     BrowserWindow.fromWebContents(event.sender)?.minimize();
   });
 
   ipcMain.on("aura:window:maximize", (event) => {
+    if (!isTrustedSender(event)) {
+      return;
+    }
+
     const window = BrowserWindow.fromWebContents(event.sender);
 
     if (!window) {
@@ -684,14 +805,26 @@ const registerIpc = () => {
   });
 
   ipcMain.on("aura:window:close", (event) => {
+    if (!isTrustedSender(event)) {
+      return;
+    }
+
     BrowserWindow.fromWebContents(event.sender)?.close();
   });
 
-  ipcMain.on("aura:window:show", () => {
+  ipcMain.on("aura:window:show", (event) => {
+    if (!isTrustedSender(event)) {
+      return;
+    }
+
     showMainWindow();
   });
 
-  ipcMain.on("aura:window:hide-to-tray", () => {
+  ipcMain.on("aura:window:hide-to-tray", (event) => {
+    if (!isTrustedSender(event)) {
+      return;
+    }
+
     hideMainWindowToTray();
   });
 };
