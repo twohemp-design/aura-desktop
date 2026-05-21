@@ -71,6 +71,23 @@ If the source repository must stay private, use one of these approaches:
 - publish updates to `https://updates.aurahub.ru`;
 - proxy private release assets through a backend that does not expose GitHub tokens to the desktop app.
 
+## Add GitHub Signing Secrets
+
+When you have a `.pfx` certificate file and its password, run:
+
+```powershell
+.\scripts\set-github-signing-secrets.ps1 `
+  -CertificatePath "C:\path\to\certificate.pfx" `
+  -CertificatePassword "certificate-password"
+```
+
+This stores:
+
+- `CSC_LINK`: base64-encoded `.pfx`;
+- `CSC_KEY_PASSWORD`: certificate password.
+
+Never commit the `.pfx` file or password to the repository.
+
 ## Update Channel Model
 
 Planned channels:
