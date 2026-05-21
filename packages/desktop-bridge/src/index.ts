@@ -44,6 +44,8 @@ export type AuraDesktopApi = {
   };
   system: {
     getPlatform: () => Promise<NodeJS.Platform>;
+    onResume: (callback: () => void) => () => void;
+    onUnlock: (callback: () => void) => () => void;
   };
   updates: {
     getStatus: () => Promise<AuraUpdateStatus>;
@@ -55,6 +57,8 @@ export type AuraDesktopApi = {
     isMaximized: () => Promise<boolean>;
     minimize: () => void;
     maximize: () => void;
+    show: () => void;
+    hideToTray: () => void;
     close: () => void;
   };
 };

@@ -2,7 +2,17 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { AuraDesktopApi } from "@aura/desktop-bridge";
 
 const TITLEBAR_HEIGHT = 32;
-const PRODUCT_CHANNEL = "Alpha";
+const PRODUCT_CHANNEL = "Альфа";
+
+const subscribeToMainEvent = (channel: string, callback: () => void) => {
+  const listener = () => callback();
+
+  ipcRenderer.on(channel, listener);
+
+  return () => {
+    ipcRenderer.off(channel, listener);
+  };
+};
 
 const auraDesktop: AuraDesktopApi = {
   app: {
@@ -28,11 +38,15 @@ const auraDesktop: AuraDesktopApi = {
   },
   system: {
     getPlatform: () => ipcRenderer.invoke("aura:system:get-platform") as Promise<NodeJS.Platform>,
+    onResume: (callback) => subscribeToMainEvent("aura:system:resume", callback),
+    onUnlock: (callback) => subscribeToMainEvent("aura:system:unlock", callback),
   },
   window: {
     isMaximized: () => ipcRenderer.invoke("aura:window:is-maximized") as Promise<boolean>,
     minimize: () => ipcRenderer.send("aura:window:minimize"),
     maximize: () => ipcRenderer.send("aura:window:maximize"),
+    show: () => ipcRenderer.send("aura:window:show"),
+    hideToTray: () => ipcRenderer.send("aura:window:hide-to-tray"),
     close: () => ipcRenderer.send("aura:window:close"),
   },
   updates: {
@@ -180,17 +194,17 @@ const injectDesktopTitlebar = () => {
       <span id="aura-desktop-version">${PRODUCT_CHANNEL}</span>
     </div>
     <div class="aura-desktop-titlebar-controls">
-      <button type="button" data-window-action="minimize" aria-label="Minimize">
+      <button type="button" data-window-action="minimize" aria-label="Свернуть">
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
           <path d="M1 5h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
         </svg>
       </button>
-      <button type="button" data-window-action="maximize" aria-label="Maximize">
+      <button type="button" data-window-action="maximize" aria-label="Развернуть">
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
           <rect x="1.5" y="1.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1.2"/>
         </svg>
       </button>
-      <button type="button" data-window-action="close" aria-label="Close">
+      <button type="button" data-window-action="close" aria-label="Закрыть">
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
           <path d="M2 2l6 6M8 2L2 8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
         </svg>

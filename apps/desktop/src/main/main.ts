@@ -4,6 +4,7 @@ import {
   ipcMain,
   Menu,
   Notification,
+  powerMonitor,
   shell,
   Tray,
 } from "electron";
@@ -44,6 +45,7 @@ let splashWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
 let pendingDeepLink: string | null = null;
+let openMainWindowHidden = false;
 
 const getAssetPath = (...segments: string[]) => {
   if (app.isPackaged) {
@@ -121,6 +123,13 @@ const createMainWindow = async () => {
   mainWindow.once("ready-to-show", () => {
     closeSplashWindow(splashWindow);
     splashWindow = null;
+
+    if (openMainWindowHidden) {
+      openMainWindowHidden = false;
+      mainWindow?.setSkipTaskbar(true);
+      return;
+    }
+
     mainWindow?.show();
   });
 
@@ -132,7 +141,7 @@ const createMainWindow = async () => {
     }
 
     event.preventDefault();
-    mainWindow?.hide();
+    hideMainWindowToTray();
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -168,6 +177,7 @@ const createMainWindow = async () => {
 
 const showMainWindow = () => {
   if (!mainWindow) {
+    openMainWindowHidden = false;
     void createMainWindow();
     return;
   }
@@ -177,7 +187,17 @@ const showMainWindow = () => {
   }
 
   mainWindow.show();
+  mainWindow.setSkipTaskbar(false);
   mainWindow.focus();
+};
+
+const hideMainWindowToTray = () => {
+  if (!mainWindow) {
+    return;
+  }
+
+  mainWindow.hide();
+  mainWindow.setSkipTaskbar(true);
 };
 
 const handleDeepLink = async (deepLink: string) => {
@@ -204,17 +224,21 @@ const handleDeepLink = async (deepLink: string) => {
 
 const createTray = () => {
   tray = new Tray(getAssetPath("aura-icon.ico"));
-  tray.setToolTip("Aura");
+  tray.setToolTip("Aura Desktop");
   tray.setContextMenu(Menu.buildFromTemplate([
     {
-      label: "Open Aura",
+      label: "Открыть Aura",
       click: showMainWindow,
+    },
+    {
+      label: "Скрыть в трей",
+      click: hideMainWindowToTray,
     },
     {
       type: "separator",
     },
     {
-      label: "Quit Aura",
+      label: "Выйти из Aura",
       click: () => {
         isQuitting = true;
         app.quit();
@@ -260,6 +284,7 @@ const registerIpc = () => {
     app.setLoginItemSettings({
       openAtLogin: nextSettings.launchAtStartup,
       openAsHidden: nextSettings.openAsHidden,
+      args: nextSettings.launchAtStartup && nextSettings.openAsHidden ? ["--hidden"] : [],
     });
 
     return nextSettings;
@@ -271,6 +296,7 @@ const registerIpc = () => {
     app.setLoginItemSettings({
       openAtLogin: nextSettings.launchAtStartup,
       openAsHidden: nextSettings.openAsHidden,
+      args: nextSettings.launchAtStartup && nextSettings.openAsHidden ? ["--hidden"] : [],
     });
 
     return app.getLoginItemSettings().openAtLogin;
@@ -301,7 +327,14 @@ const registerIpc = () => {
       icon: getAssetPath("aura-icon.png"),
     });
 
-    notification.on("click", showMainWindow);
+    mainWindow?.flashFrame(true);
+    notification.on("click", () => {
+      mainWindow?.flashFrame(false);
+      showMainWindow();
+    });
+    notification.on("close", () => {
+      mainWindow?.flashFrame(false);
+    });
     notification.show();
 
     return true;
@@ -328,6 +361,14 @@ const registerIpc = () => {
   ipcMain.on("aura:window:close", (event) => {
     BrowserWindow.fromWebContents(event.sender)?.close();
   });
+
+  ipcMain.on("aura:window:show", () => {
+    showMainWindow();
+  });
+
+  ipcMain.on("aura:window:hide-to-tray", () => {
+    hideMainWindowToTray();
+  });
 };
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
@@ -344,7 +385,9 @@ if (!gotSingleInstanceLock) {
   app.setLoginItemSettings({
     openAtLogin: settings.launchAtStartup,
     openAsHidden: settings.openAsHidden,
+    args: settings.launchAtStartup && settings.openAsHidden ? ["--hidden"] : [],
   });
+  openMainWindowHidden = process.argv.includes("--hidden");
 
   log("info", "[startup] Aura Desktop starting", {
     appVersion: app.getVersion(),
@@ -355,6 +398,7 @@ if (!gotSingleInstanceLock) {
 
   app.on("second-instance", (_event, commandLine) => {
     const deepLink = commandLine.find((value) => value.startsWith(`${DEEP_LINK_PROTOCOL}://`));
+    openMainWindowHidden = false;
 
     if (deepLink) {
       void handleDeepLink(deepLink);
@@ -367,7 +411,7 @@ if (!gotSingleInstanceLock) {
     configureSecurityPolicy(AURA_DESKTOP_URL);
     registerIpc();
     createTray();
-    splashWindow = createSplashWindow(getAssetPath("aura-icon.png"));
+    splashWindow = openMainWindowHidden ? null : createSplashWindow(getAssetPath("aura-icon.png"));
     const updateResult = await runStartupUpdateFlow((stage) => setSplashStage(splashWindow, stage));
 
     if (updateResult === "installing") {
@@ -384,6 +428,24 @@ if (!gotSingleInstanceLock) {
 app.on("open-url", (event, url) => {
   event.preventDefault();
   void handleDeepLink(url);
+});
+
+powerMonitor.on("suspend", () => {
+  log("info", "[power] system suspend");
+});
+
+powerMonitor.on("resume", () => {
+  log("info", "[power] system resume");
+  mainWindow?.webContents.send("aura:system:resume");
+});
+
+powerMonitor.on("lock-screen", () => {
+  log("info", "[power] screen locked");
+});
+
+powerMonitor.on("unlock-screen", () => {
+  log("info", "[power] screen unlocked");
+  mainWindow?.webContents.send("aura:system:unlock");
 });
 
 app.on("activate", () => {
