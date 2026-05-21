@@ -18,6 +18,11 @@ import {
   readRecentLog,
 } from "./logger";
 import {
+  buildDiagnosticsReport,
+  getDiagnosticsDirectory,
+  writeDiagnosticsReport,
+} from "./diagnostics";
+import {
   getSettingsFilePath,
   readSettings,
   updateSettings,
@@ -318,6 +323,28 @@ const createTray = () => {
       click: hideMainWindowToTray,
     },
     {
+      label: "Диагностика",
+      submenu: [
+        {
+          label: "Создать отчет",
+          click: () => {
+            void writeDiagnosticsReport(mainWindow, getDiagnosticsInput()).then(({ filePath }) => {
+              log("info", "[diagnostics] report written", filePath);
+              void shell.showItemInFolder(filePath);
+            }).catch((error: unknown) => {
+              log("error", "[diagnostics] failed to write report", error);
+            });
+          },
+        },
+        {
+          label: "Открыть папку отчетов",
+          click: () => {
+            void shell.openPath(getDiagnosticsDirectory());
+          },
+        },
+      ],
+    },
+    {
       type: "separator",
     },
     {
@@ -437,6 +464,29 @@ const unregisterVoiceHotkeys = () => {
   registeredVoiceHotkeys = new Map();
 };
 
+const getRegisteredVoiceHotkeysSnapshot = () => {
+  const snapshot: Record<string, string> = {};
+
+  for (const [accelerator, action] of registeredVoiceHotkeys.entries()) {
+    snapshot[action] = accelerator;
+  }
+
+  return snapshot;
+};
+
+const getDiagnosticsInput = () => {
+  const settings = readSettings();
+
+  return {
+    auraUrl: AURA_DESKTOP_URL,
+    closeToTray: settings.closeToTray,
+    registeredVoiceHotkeys: getRegisteredVoiceHotkeysSnapshot(),
+    rendererOnline,
+    settings,
+    updateStatus: getUpdateStatus(),
+  };
+};
+
 const registerVoiceHotkeys = (hotkeys: ReturnType<typeof normalizeVoiceHotkeySettings>) => {
   unregisterVoiceHotkeys();
 
@@ -536,6 +586,17 @@ const registerIpc = () => {
   });
   ipcMain.handle("aura:diagnostics:get-log-file-path", () => getLogFilePath());
   ipcMain.handle("aura:diagnostics:read-recent-log", () => readRecentLog());
+  ipcMain.handle("aura:diagnostics:get-report", () => buildDiagnosticsReport(mainWindow, getDiagnosticsInput()));
+  ipcMain.handle("aura:diagnostics:write-report", () => writeDiagnosticsReport(mainWindow, getDiagnosticsInput()));
+  ipcMain.handle("aura:diagnostics:open-folder", async () => {
+    const error = await shell.openPath(getDiagnosticsDirectory());
+
+    return {
+      ok: !error,
+      error: error || null,
+      path: getDiagnosticsDirectory(),
+    };
+  });
   ipcMain.handle("aura:updates:get-status", () => getUpdateStatus());
   ipcMain.handle("aura:updates:check", () => checkForUpdates());
   ipcMain.handle("aura:updates:download", () => downloadUpdate());

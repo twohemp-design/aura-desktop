@@ -39,6 +39,15 @@ const auraDesktop: AuraDesktopApi = {
   diagnostics: {
     getLogFilePath: () => ipcRenderer.invoke("aura:diagnostics:get-log-file-path") as Promise<string>,
     readRecentLog: () => ipcRenderer.invoke("aura:diagnostics:read-recent-log") as Promise<string>,
+    getReport: () => (
+      ipcRenderer.invoke("aura:diagnostics:get-report") as ReturnType<AuraDesktopApi["diagnostics"]["getReport"]>
+    ),
+    writeReport: () => (
+      ipcRenderer.invoke("aura:diagnostics:write-report") as ReturnType<AuraDesktopApi["diagnostics"]["writeReport"]>
+    ),
+    openFolder: () => (
+      ipcRenderer.invoke("aura:diagnostics:open-folder") as ReturnType<AuraDesktopApi["diagnostics"]["openFolder"]>
+    ),
   },
   notifications: {
     isSupported: () => ipcRenderer.invoke("aura:notifications:is-supported") as Promise<boolean>,

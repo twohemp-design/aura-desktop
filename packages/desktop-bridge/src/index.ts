@@ -77,6 +77,19 @@ export type AuraVoiceHotkeyRegistration = {
   failed: AuraVoiceHotkeySettings;
 };
 
+export type AuraDiagnosticsReport = Record<string, unknown>;
+
+export type AuraDiagnosticsWriteResult = {
+  filePath: string;
+  report: AuraDiagnosticsReport;
+};
+
+export type AuraDiagnosticsOpenFolderResult = {
+  ok: boolean;
+  error: string | null;
+  path: string;
+};
+
 export type AuraDesktopApi = {
   app: {
     getVersion: () => Promise<string>;
@@ -90,6 +103,9 @@ export type AuraDesktopApi = {
   diagnostics: {
     getLogFilePath: () => Promise<string>;
     readRecentLog: () => Promise<string>;
+    getReport: () => Promise<AuraDiagnosticsReport>;
+    writeReport: () => Promise<AuraDiagnosticsWriteResult>;
+    openFolder: () => Promise<AuraDiagnosticsOpenFolderResult>;
   };
   notifications: {
     isSupported: () => Promise<boolean>;
